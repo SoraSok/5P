@@ -1,0 +1,21 @@
+# Git LFS configuration for large files
+*.pkl filter=lfs diff=lfs merge=lfs -text
+*.h5 filter=lfs diff=lfs merge=lfs -text
+*.zip filter=lfs diff=lfs merge=lfs -text
+*.tar.gz filter=lfs diff=lfs merge=lfs -text
+
+# Large dataset directories
+data/kaggle_datasets/** filter=lfs diff=lfs merge=lfs -text
+data/asl_alphabet_train/** filter=lfs diff=lfs merge=lfs -text
+models/** filter=lfs diff=lfs merge=lfs -text
+
+# Keep small files in regular Git
+*.py text
+*.md text
+*.txt text
+*.json text
+*.yml text
+*.yaml text
+requirements.txt text
+README.md text
+
