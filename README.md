@@ -14,6 +14,13 @@ Demo application for reading movements and identifying gestures, automatic trans
 **Boboc Gabriel:** Interface (GUI)  
 **Postolachi Dumitru:** The database
 
+## Dataset
+
+This project uses the **ASL Alphabet Dataset** from Kaggle:
+- **Source:** [ASL Alphabet Dataset by Grassknoted](https://www.kaggle.com/datasets/grassknoted/asl-alphabet)
+- **Description:** A collection of images of alphabets from the American Sign Language, separated into 29 folders representing each letter (A-Z) and additional signs (del, nothing, space).
+- **Size:** ~87,000 training images and 29 test images
+
 ## Setup
 
 ### Prerequisites
