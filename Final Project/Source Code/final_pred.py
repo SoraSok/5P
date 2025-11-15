@@ -9,6 +9,14 @@ from keras.models import load_model
 from cvzone.HandTrackingModule import HandDetector
 from string import ascii_uppercase
 import enchant
+# ElevenLabs for high-quality text-to-speech
+try:
+    from elevenlabs import generate, play, set_api_key, voices
+    ELEVENLABS_AVAILABLE = True
+except ImportError:
+    ELEVENLABS_AVAILABLE = False
+    print("Warning: ElevenLabs not installed. Using pyttsx3 fallback.")
+
 #Change the language of your pc to english-united-state
 # Initialize enchant dictionary for spell checking
 try:
@@ -54,10 +62,33 @@ class Application:
             self.vs = cv2.VideoCapture(0)  # Fallback, will show errors but won't crash
         self.current_image = None
         self.model = load_model('./cnn8grps_rad1_model.h5')
-        self.speak_engine=pyttsx3.init()
-        self.speak_engine.setProperty("rate",100)
-        voices=self.speak_engine.getProperty("voices")
-        self.speak_engine.setProperty("voice",voices[0].id)
+        
+        # Initialize text-to-speech engines
+        # Try ElevenLabs first if available and API key is set
+        self.use_elevenlabs = False
+        self.elevenlabs_voice_id = "21m00Tcm4TlvDq8ikWAM"  # Default: Rachel (neutral, clear voice)
+        
+        if ELEVENLABS_AVAILABLE:
+            # Check for API key in environment variable or .env file
+            api_key = os.getenv('ELEVENLABS_API_KEY')
+            if api_key:
+                try:
+                    set_api_key(api_key)
+                    self.use_elevenlabs = True
+                    print("ElevenLabs TTS enabled - using high-quality voice synthesis")
+                except Exception as e:
+                    print(f"Warning: Could not configure ElevenLabs API: {e}")
+                    print("Falling back to pyttsx3")
+            else:
+                print("ElevenLabs API key not found. Set ELEVENLABS_API_KEY environment variable to use ElevenLabs.")
+                print("Using pyttsx3 for text-to-speech (offline, no API key required)")
+        
+        # Initialize pyttsx3 as fallback
+        self.speak_engine = pyttsx3.init()
+        self.speak_engine.setProperty("rate", 150)  # Slightly faster rate
+        voices = self.speak_engine.getProperty("voices")
+        if voices:
+            self.speak_engine.setProperty("voice", voices[0].id)
 
         self.ct = {}
         self.ct['blank'] = 0
@@ -141,6 +172,7 @@ class Application:
 
 
 
+
         self.str = " "
         self.ccc=0
         self.word = " "
@@ -152,6 +184,7 @@ class Application:
         self.word2 = " "
         self.word3 = " "
         self.word4 = " "
+
 
         self.video_loop()
 
@@ -300,9 +333,36 @@ class Application:
 
 
     def speak_fun(self):
-        self.speak_engine.say(self.str)
-        self.speak_engine.runAndWait()
+        """Convert the current sentence to speech using ElevenLabs or pyttsx3"""
+        text_to_speak = self.str.strip()
+        
+        if not text_to_speak or text_to_speak == " ":
+            print("No text to speak")
+            return
+        
+        if self.use_elevenlabs and ELEVENLABS_AVAILABLE:
+            try:
+                # Use ElevenLabs for high-quality text-to-speech
+                print(f"Speaking with ElevenLabs: {text_to_speak}")
+                audio = generate(
+                    text=text_to_speak,
+                    voice=self.elevenlabs_voice_id,
+                    model="eleven_monolingual_v1"  # or "eleven_multilingual_v2" for multilingual
+                )
+                play(audio)
+            except Exception as e:
+                print(f"ElevenLabs error: {e}")
+                print("Falling back to pyttsx3...")
+                # Fallback to pyttsx3
+                self.speak_engine.say(text_to_speak)
+                self.speak_engine.runAndWait()
+        else:
+            # Use pyttsx3 (offline, no API required)
+            print(f"Speaking with pyttsx3: {text_to_speak}")
+            self.speak_engine.say(text_to_speak)
+            self.speak_engine.runAndWait()
 
+   
 
     def clear_fun(self):
         self.str=" "
@@ -776,13 +836,10 @@ class Application:
                 lenn = len(ddd.suggest(word))
                 if lenn >= 4:
                     self.word4 = ddd.suggest(word)[3]
-
                 if lenn >= 3:
                     self.word3 = ddd.suggest(word)[2]
-
                 if lenn >= 2:
                     self.word2 = ddd.suggest(word)[1]
-
                 if lenn >= 1:
                     self.word1 = ddd.suggest(word)[0]
             else:

@@ -26,29 +26,35 @@ The project aims to **improve communication and accessibility** between the deaf
 ### In order to Run the program locally
 
 1. Create a virtual environment
-    ```bash
-    virtualenv venv
-    ```
+
+   ```bash
+   virtualenv venv
+   ```
 
 2. Activate it
-    ```bash
-    Source venv\bin\activate
-    ```
+
+   ```bash
+   Source venv\bin\activate
+   venv\Scripts\Activate.ps1
+   ```
 
 3. Install all packages and dependencies with
-    ```bash
-    pip install -r requirements.txt
-    ```
+
+   ```bash
+   pip install -r requirements.txt
+   ```
 
 4. For collecting Dataset,
-    ```bash
-    python data_collection_final.py
-    ```
+
+   ```bash
+   python data_collection_final.py
+   ```
 
 5. Finally, Run the application with GUI
-    ```bash
-    python final_pred.py
-    ```
+   ```bash
+   cd "Final Project\Source Code"
+   python final_pred.py
+   ```
 
 ## Participants and roles:
 
@@ -61,6 +67,7 @@ The project aims to **improve communication and accessibility** between the deaf
 ## Dataset
 
 This project uses the **ASL Alphabet Dataset** from Kaggle:
+
 - **Source:** [ASL Alphabet Dataset by Grassknoted](https://www.kaggle.com/datasets/grassknoted/asl-alphabet)
 - **Description:** A collection of images of alphabets from the American Sign Language, separated into 29 folders representing each letter (A-Z) and additional signs (del, nothing, space).
 - **Size:** ~87,000 training images and 29 test images
