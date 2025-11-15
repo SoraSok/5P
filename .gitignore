@@ -11,6 +11,7 @@ build/
 # Virtual Environment
 venv/
 venv_py312/
+venv312/
 env/
 ENV/
 
@@ -23,6 +24,8 @@ ENV/
 
 # Data files (too large for git)
 data/
+# Image datasets (too many files for git)
+Final Project/Source Code/AtoZ_3.1/
 *.pkl
 *.h5
 *.hdf5
