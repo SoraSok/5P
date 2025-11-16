@@ -11,11 +11,21 @@ from string import ascii_uppercase
 import enchant
 # ElevenLabs for high-quality text-to-speech
 try:
-    from elevenlabs import generate, play, set_api_key, voices
+    from elevenlabs.client import ElevenLabs
+    from elevenlabs import play
+    import sounddevice as sd
+    try:
+        import soundfile as sf
+        SOUNDFILE_AVAILABLE = True
+    except ImportError:
+        SOUNDFILE_AVAILABLE = False
     ELEVENLABS_AVAILABLE = True
-except ImportError:
+    print("ElevenLabs library imported successfully")
+except ImportError as e:
     ELEVENLABS_AVAILABLE = False
-    print("Warning: ElevenLabs not installed. Using pyttsx3 fallback.")
+    SOUNDFILE_AVAILABLE = False
+    print(f"Warning: ElevenLabs not installed. Error: {e}")
+    print("Using pyttsx3 fallback.")
 
 #Change the language of your pc to english-united-state
 # Initialize enchant dictionary for spell checking
@@ -64,24 +74,24 @@ class Application:
         self.model = load_model('./cnn8grps_rad1_model.h5')
         
         # Initialize text-to-speech engines
-        # Try ElevenLabs first if available and API key is set
+        # ElevenLabs API key (hardcoded)
         self.use_elevenlabs = False
         self.elevenlabs_voice_id = "21m00Tcm4TlvDq8ikWAM"  # Default: Rachel (neutral, clear voice)
+        self.elevenlabs_api_key = "sk_485cb28dd681c4ed6d596613c86cc91c29edb9c612b18be3"  # Hardcoded API key
+        self.elevenlabs_client = None
         
         if ELEVENLABS_AVAILABLE:
-            # Check for API key in environment variable or .env file
-            api_key = os.getenv('ELEVENLABS_API_KEY')
-            if api_key:
-                try:
-                    set_api_key(api_key)
-                    self.use_elevenlabs = True
-                    print("ElevenLabs TTS enabled - using high-quality voice synthesis")
-                except Exception as e:
-                    print(f"Warning: Could not configure ElevenLabs API: {e}")
-                    print("Falling back to pyttsx3")
-            else:
-                print("ElevenLabs API key not found. Set ELEVENLABS_API_KEY environment variable to use ElevenLabs.")
-                print("Using pyttsx3 for text-to-speech (offline, no API key required)")
+            try:
+                # Initialize ElevenLabs client with hardcoded API key
+                self.elevenlabs_client = ElevenLabs(api_key=self.elevenlabs_api_key)
+                self.use_elevenlabs = True
+                print("ElevenLabs TTS enabled - using high-quality voice synthesis")
+            except Exception as e:
+                print(f"Warning: Could not configure ElevenLabs API: {e}")
+                print("Falling back to pyttsx3")
+        else:
+            print("ElevenLabs library not available. Install with: pip install elevenlabs")
+            print("Using pyttsx3 for text-to-speech (offline, no API key required)")
         
         # Initialize pyttsx3 as fallback
         self.speak_engine = pyttsx3.init()
@@ -333,34 +343,89 @@ class Application:
 
 
     def speak_fun(self):
-        """Convert the current sentence to speech using ElevenLabs or pyttsx3"""
+        """Convert the current sentence to speech using ElevenLabs"""
         text_to_speak = self.str.strip()
         
         if not text_to_speak or text_to_speak == " ":
             print("No text to speak")
             return
         
-        if self.use_elevenlabs and ELEVENLABS_AVAILABLE:
+        # Use ElevenLabs if available and configured
+        if self.use_elevenlabs and ELEVENLABS_AVAILABLE and self.elevenlabs_client:
             try:
-                # Use ElevenLabs for high-quality text-to-speech
                 print(f"Speaking with ElevenLabs: {text_to_speak}")
-                audio = generate(
+                
+                # Generate audio from ElevenLabs using the client API
+                # Using eleven_turbo_v2_5 or eleven_multilingual_v2 which are available on free tier
+                audio_stream = self.elevenlabs_client.text_to_speech.convert(
+                    voice_id=self.elevenlabs_voice_id,
                     text=text_to_speak,
-                    voice=self.elevenlabs_voice_id,
-                    model="eleven_monolingual_v1"  # or "eleven_multilingual_v2" for multilingual
+                    model_id="eleven_turbo_v2_5"  # Free tier compatible model (alternative: "eleven_multilingual_v2")
                 )
-                play(audio)
+                
+                # Convert generator to bytes
+                audio_bytes = b''.join(audio_stream)
+                
+                # Play the audio - try multiple methods for reliability
+                try:
+                    # Method 1: Use elevenlabs play() function
+                    from io import BytesIO
+                    play(BytesIO(audio_bytes))
+                except Exception as play_error:
+                    print(f"play() method failed: {play_error}, trying alternative method...")
+                    try:
+                        # Method 2: Use sounddevice directly for more reliable playback (if soundfile available)
+                        if SOUNDFILE_AVAILABLE:
+                            import tempfile
+                            
+                            # Save to temporary file
+                            with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as tmp_file:
+                                tmp_file.write(audio_bytes)
+                                tmp_path = tmp_file.name
+                            
+                            # Play using soundfile and sounddevice
+                            data, samplerate = sf.read(tmp_path)
+                            sd.play(data, samplerate)
+                            sd.wait()  # Wait until playback is finished
+                            
+                            # Clean up
+                            os.unlink(tmp_path)
+                        else:
+                            raise ImportError("soundfile not available")
+                    except Exception as alt_error:
+                        print(f"Alternative playback method failed: {alt_error}")
+                        # Method 3: Save to file and use system player as last resort
+                        try:
+                            import tempfile
+                            with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as tmp_file:
+                                tmp_file.write(audio_bytes)
+                                tmp_path = tmp_file.name
+                            
+                            # Use system default player
+                            import subprocess
+                            import platform
+                            if platform.system() == 'Windows':
+                                os.startfile(tmp_path)
+                            else:
+                                subprocess.call(['open' if platform.system() == 'Darwin' else 'xdg-open', tmp_path])
+                        except Exception as final_error:
+                            print(f"All playback methods failed: {final_error}")
+                            print("Audio was generated but could not be played. Check your audio settings.")
+                
+                return  # Success, exit early
+                
             except Exception as e:
                 print(f"ElevenLabs error: {e}")
-                print("Falling back to pyttsx3...")
-                # Fallback to pyttsx3
-                self.speak_engine.say(text_to_speak)
-                self.speak_engine.runAndWait()
+                print(f"Error type: {type(e).__name__}")
+                import traceback
+                traceback.print_exc()
+                print("Please check:")
+                print("1. Your API key is valid")
+                print("2. You have sufficient API credits")
+                print("3. Your internet connection is working")
         else:
-            # Use pyttsx3 (offline, no API required)
-            print(f"Speaking with pyttsx3: {text_to_speak}")
-            self.speak_engine.say(text_to_speak)
-            self.speak_engine.runAndWait()
+            print("ElevenLabs is not configured properly.")
+            print(f"use_elevenlabs: {self.use_elevenlabs}, ELEVENLABS_AVAILABLE: {ELEVENLABS_AVAILABLE}, client: {self.elevenlabs_client is not None}")
 
    
 
