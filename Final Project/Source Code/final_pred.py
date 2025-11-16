@@ -9,10 +9,30 @@ from keras.models import load_model
 from cvzone.HandTrackingModule import HandDetector
 from string import ascii_uppercase
 import enchant
+# Google Gemini Pro for LLM-powered context-aware suggestions
+try:
+    import google.generativeai as genai
+    GEMINI_AVAILABLE = True
+    print("Google Gemini Pro library imported successfully")
+except ImportError as e:
+    GEMINI_AVAILABLE = False
+    print(f"Warning: Google Gemini Pro not installed. Error: {e}")
+    print("Install with: pip install google-generativeai")
+
 # ElevenLabs for high-quality text-to-speech
 try:
     from elevenlabs.client import ElevenLabs
-    from elevenlabs import play
+    try:
+        from elevenlabs.play import play as play_audio
+        PLAY_AVAILABLE = True
+    except ImportError:
+        try:
+            from elevenlabs import play as play_module
+            play_audio = play_module.play if hasattr(play_module, 'play') else None
+            PLAY_AVAILABLE = play_audio is not None
+        except:
+            PLAY_AVAILABLE = False
+            play_audio = None
     import sounddevice as sd
     try:
         import soundfile as sf
@@ -41,6 +61,8 @@ hd = HandDetector(maxHands=1)
 hd2 = HandDetector(maxHands=1)
 import tkinter as tk
 from PIL import Image, ImageTk
+import threading
+import time
 
 offset=29
 
@@ -72,6 +94,30 @@ class Application:
             self.vs = cv2.VideoCapture(0)  # Fallback, will show errors but won't crash
         self.current_image = None
         self.model = load_model('./cnn8grps_rad1_model.h5')
+        
+        # Initialize Google Gemini Pro for LLM-powered features
+        self.gemini_api_key = "AIzaSyCxGKWhYYz87dfWozR2LWbSpNu6q1tAAwo"  # Hardcoded API key
+        self.gemini_model = None
+        self.use_gemini = False
+        self.conversation_history = []  # Store conversation for context
+        self.gemini_request_pending = False  # Prevent multiple simultaneous requests
+        self.last_word_request_time = 0  # For debouncing
+        self.last_word = ""  # Track last word to avoid duplicate requests
+        
+        if GEMINI_AVAILABLE:
+            try:
+                genai.configure(api_key=self.gemini_api_key)
+                # Use gemini-2.5-flash for fast, context-aware suggestions
+                # Alternative: 'gemini-2.5-pro' for better quality but slower
+                self.gemini_model = genai.GenerativeModel('gemini-2.5-flash')
+                self.use_gemini = True
+                print("Google Gemini Pro LLM enabled - using AI-powered context-aware suggestions")
+            except Exception as e:
+                print(f"Warning: Could not configure Gemini Pro API: {e}")
+                print("Falling back to enchant spell checker")
+        else:
+            print("Google Gemini Pro library not available. Install with: pip install google-generativeai")
+            print("Using enchant for basic spell checking (no AI features)")
         
         # Initialize text-to-speech engines
         # ElevenLabs API key (hardcoded)
@@ -178,6 +224,12 @@ class Application:
         self.clear.place(x=1205, y=630)
         self.clear.config(text="Clear", font=("Times New Roman", 20), wraplength=100, command=self.clear_fun)
 
+        # AI Assistant button for grammar correction and context-aware suggestions
+        self.ai_assistant = tk.Button(self.root)
+        self.ai_assistant.place(x=1105, y=630)
+        self.ai_assistant.config(text="AI Fix", font=("Times New Roman", 20), wraplength=100, 
+                                 command=self.ai_assistant_fun, bg="#4CAF50", fg="white")
+
 
 
 
@@ -240,7 +292,7 @@ class Application:
                         # img_final=img_final1=img_final2=0
 
                         handz, _ = hd2.findHands(image, draw=False, flipType=True)
-                        print(" ", self.ccc)
+                        # Removed verbose logging for performance
                         self.ccc += 1
                         if handz:
                             hand = handz[0]
@@ -353,7 +405,7 @@ class Application:
         # Use ElevenLabs if available and configured
         if self.use_elevenlabs and ELEVENLABS_AVAILABLE and self.elevenlabs_client:
             try:
-                print(f"Speaking with ElevenLabs: {text_to_speak}")
+                # Reduced logging for performance
                 
                 # Generate audio from ElevenLabs using the client API
                 # Using eleven_turbo_v2_5 or eleven_multilingual_v2 which are available on free tier
@@ -367,50 +419,57 @@ class Application:
                 audio_bytes = b''.join(audio_stream)
                 
                 # Play the audio - try multiple methods for reliability
-                try:
-                    # Method 1: Use elevenlabs play() function
-                    from io import BytesIO
-                    play(BytesIO(audio_bytes))
-                except Exception as play_error:
-                    print(f"play() method failed: {play_error}, trying alternative method...")
+                # Method 1: Use sounddevice + soundfile (most reliable for Windows)
+                playback_success = False
+                if SOUNDFILE_AVAILABLE:
                     try:
-                        # Method 2: Use sounddevice directly for more reliable playback (if soundfile available)
-                        if SOUNDFILE_AVAILABLE:
-                            import tempfile
-                            
-                            # Save to temporary file
-                            with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as tmp_file:
-                                tmp_file.write(audio_bytes)
-                                tmp_path = tmp_file.name
-                            
-                            # Play using soundfile and sounddevice
-                            data, samplerate = sf.read(tmp_path)
-                            sd.play(data, samplerate)
-                            sd.wait()  # Wait until playback is finished
-                            
-                            # Clean up
-                            os.unlink(tmp_path)
+                        import tempfile
+                        
+                        # Save to temporary file
+                        with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as tmp_file:
+                            tmp_file.write(audio_bytes)
+                            tmp_path = tmp_file.name
+                        
+                        # Play using soundfile and sounddevice
+                        data, samplerate = sf.read(tmp_path)
+                        sd.play(data, samplerate)
+                        sd.wait()  # Wait until playback is finished
+                        
+                        # Clean up
+                        os.unlink(tmp_path)
+                        playback_success = True
+                        # Audio played successfully
+                    except Exception:
+                        pass  # Try next method
+                
+                # Method 2: Try ElevenLabs play() function if available
+                if not playback_success and PLAY_AVAILABLE and play_audio:
+                    try:
+                        from io import BytesIO
+                        play_audio(BytesIO(audio_bytes))
+                        playback_success = True
+                        # Audio played successfully
+                    except Exception:
+                        pass  # Try next method
+                
+                # Method 3: Save to file and use system player as last resort
+                if not playback_success:
+                    try:
+                        import tempfile
+                        with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as tmp_file:
+                            tmp_file.write(audio_bytes)
+                            tmp_path = tmp_file.name
+                        
+                        # Use system default player
+                        import subprocess
+                        import platform
+                        if platform.system() == 'Windows':
+                            os.startfile(tmp_path)
                         else:
-                            raise ImportError("soundfile not available")
-                    except Exception as alt_error:
-                        print(f"Alternative playback method failed: {alt_error}")
-                        # Method 3: Save to file and use system player as last resort
-                        try:
-                            import tempfile
-                            with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as tmp_file:
-                                tmp_file.write(audio_bytes)
-                                tmp_path = tmp_file.name
-                            
-                            # Use system default player
-                            import subprocess
-                            import platform
-                            if platform.system() == 'Windows':
-                                os.startfile(tmp_path)
-                            else:
-                                subprocess.call(['open' if platform.system() == 'Darwin' else 'xdg-open', tmp_path])
-                        except Exception as final_error:
-                            print(f"All playback methods failed: {final_error}")
-                            print("Audio was generated but could not be played. Check your audio settings.")
+                            subprocess.call(['open' if platform.system() == 'Darwin' else 'xdg-open', tmp_path])
+                        # Audio opened with system player
+                    except Exception:
+                        pass  # Reduced verbose error logging
                 
                 return  # Success, exit early
                 
@@ -895,8 +954,10 @@ class Application:
             ed=len(self.str)
             word=self.str[st+1:ed]
             self.word=word
-            print("----------word = ",word)
+            
+            # Use enchant first (fast, immediate) then update with Gemini in background if available
             if len(word.strip())!=0 and ddd is not None:
+                # Fallback to enchant spell checker
                 ddd.check(word)
                 lenn = len(ddd.suggest(word))
                 if lenn >= 4:
@@ -912,7 +973,188 @@ class Application:
                 self.word2 = " "
                 self.word3 = " "
                 self.word4 = " "
+            
+            # Update with Gemini suggestions in background (non-blocking, async)
+            # Use debouncing to avoid too many API calls
+            current_time = time.time()
+            if (len(word.strip()) != 0 and self.use_gemini and self.gemini_model and 
+                word.strip() != self.last_word and 
+                current_time - self.last_word_request_time > 0.5 and  # Debounce: 500ms delay
+                not self.gemini_request_pending):
+                self.last_word = word.strip()
+                self.last_word_request_time = current_time
+                # Run Gemini in background thread to avoid freezing UI
+                threading.Thread(target=self.get_gemini_word_suggestions_async, 
+                               args=(word, self.str), daemon=True).start()
 
+
+    def get_gemini_word_suggestions_async(self, word, sentence):
+        """Get context-aware word suggestions from Gemini Pro (async, non-blocking)"""
+        if self.gemini_request_pending:
+            return  # Skip if already processing
+        
+        self.gemini_request_pending = True
+        try:
+            self._get_gemini_word_suggestions(word, sentence)
+        finally:
+            self.gemini_request_pending = False
+    
+    def _get_gemini_word_suggestions(self, word, sentence):
+        """Internal method: Get context-aware word suggestions from Gemini Pro based on sentence context"""
+        try:
+            # Create prompt for context-aware suggestions
+            prompt = f"""Given the incomplete sentence: "{sentence.strip()}"
+And the current word being typed: "{word.strip()}"
+
+Provide exactly 4 word suggestions that:
+1. Could replace or complete the word "{word}" in this context
+2. Are grammatically correct and make sense in the sentence
+3. Are common words that fit the context
+4. Are ordered from most likely to least likely
+
+Return ONLY a comma-separated list of exactly 4 words, no explanations, no numbering, just: word1, word2, word3, word4
+If you can't suggest 4 words, repeat the most likely ones."""
+
+            response = self.gemini_model.generate_content(prompt)
+            suggestions_text = response.text.strip()
+            
+            # Parse suggestions (handle various formats)
+            # Try to extract words from the response
+            suggestions = []
+            # Split by comma and clean up
+            parts = suggestions_text.split(',')
+            for part in parts:
+                cleaned = part.strip()
+                # Remove common prefixes like "1.", "2.", etc.
+                if '.' in cleaned and cleaned[0].isdigit():
+                    cleaned = cleaned.split('.', 1)[1].strip()
+                # Remove quotes
+                cleaned = cleaned.strip('"\'')
+                if cleaned and len(cleaned) > 0:
+                    suggestions.append(cleaned)
+            suggestions = suggestions[:4]  # Take first 4
+            
+            # Fill suggestions
+            if len(suggestions) >= 4:
+                self.word1 = suggestions[0] if len(suggestions[0]) <= 20 else suggestions[0][:20]
+                self.word2 = suggestions[1] if len(suggestions[1]) <= 20 else suggestions[1][:20]
+                self.word3 = suggestions[2] if len(suggestions[2]) <= 20 else suggestions[2][:20]
+                self.word4 = suggestions[3] if len(suggestions[3]) <= 20 else suggestions[3][:20]
+            elif len(suggestions) >= 3:
+                self.word1 = suggestions[0] if len(suggestions[0]) <= 20 else suggestions[0][:20]
+                self.word2 = suggestions[1] if len(suggestions[1]) <= 20 else suggestions[1][:20]
+                self.word3 = suggestions[2] if len(suggestions[2]) <= 20 else suggestions[2][:20]
+                self.word4 = " "
+            elif len(suggestions) >= 2:
+                self.word1 = suggestions[0] if len(suggestions[0]) <= 20 else suggestions[0][:20]
+                self.word2 = suggestions[1] if len(suggestions[1]) <= 20 else suggestions[1][:20]
+                self.word3 = " "
+                self.word4 = " "
+            elif len(suggestions) >= 1:
+                self.word1 = suggestions[0] if len(suggestions[0]) <= 20 else suggestions[0][:20]
+                self.word2 = " "
+                self.word3 = " "
+                self.word4 = " "
+            else:
+                # Fallback to enchant if Gemini fails
+                if ddd is not None:
+                    ddd.check(word)
+                    lenn = len(ddd.suggest(word))
+                    if lenn >= 4:
+                        self.word4 = ddd.suggest(word)[3]
+                    if lenn >= 3:
+                        self.word3 = ddd.suggest(word)[2]
+                    if lenn >= 2:
+                        self.word2 = ddd.suggest(word)[1]
+                    if lenn >= 1:
+                        self.word1 = ddd.suggest(word)[0]
+                    else:
+                        self.word1 = self.word2 = self.word3 = self.word4 = " "
+                else:
+                    self.word1 = self.word2 = self.word3 = self.word4 = " "
+            
+            # Reduced logging for performance
+        except Exception:
+            pass  # Silent failure - enchant suggestions already shown
+            # Fallback to enchant
+            if ddd is not None:
+                ddd.check(word)
+                lenn = len(ddd.suggest(word))
+                if lenn >= 4:
+                    self.word4 = ddd.suggest(word)[3]
+                if lenn >= 3:
+                    self.word3 = ddd.suggest(word)[2]
+                if lenn >= 2:
+                    self.word2 = ddd.suggest(word)[1]
+                if lenn >= 1:
+                    self.word1 = ddd.suggest(word)[0]
+            else:
+                self.word1 = self.word2 = self.word3 = self.word4 = " "
+    
+    def _update_suggestion_buttons_from_suggestions(self, w1, w2, w3, w4):
+        """Update suggestion buttons in GUI from async Gemini results (thread-safe)"""
+        try:
+            self.word1, self.word2, self.word3, self.word4 = w1, w2, w3, w4
+            if len(w1.strip()) > 0 or len(w2.strip()) > 0 or len(w3.strip()) > 0 or len(w4.strip()) > 0:
+                self.b1.config(text=w1, font=("Times New Roman", 20), wraplength=825, command=self.action1)
+                self.b2.config(text=w2, font=("Times New Roman", 20), wraplength=825, command=self.action2)
+                self.b3.config(text=w3, font=("Times New Roman", 20), wraplength=825, command=self.action3)
+                self.b4.config(text=w4, font=("Times New Roman", 20), wraplength=825, command=self.action4)
+        except:
+            pass  # Fail silently if buttons not ready
+
+    def ai_assistant_fun(self):
+        """AI Assistant function: Grammar correction and sentence completion using Gemini Pro"""
+        if not self.use_gemini or not self.gemini_model:
+            print("Gemini Pro not available. Cannot use AI Assistant.")
+            return
+        
+        current_text = self.str.strip()
+        if not current_text:
+            print("No text to process with AI Assistant.")
+            return
+        
+        try:
+            # Create prompt for grammar correction and improvement
+            prompt = f"""You are an AI assistant helping a user communicate via sign language translation. 
+The user typed this sentence (which may have spelling/grammar errors from sign-to-text translation):
+"{current_text}"
+
+Please:
+1. Correct any spelling and grammar errors
+2. Keep the meaning and intent the same
+3. Make it natural and readable
+4. Return ONLY the corrected sentence, nothing else.
+
+If the sentence is already correct, return it as-is."""
+
+            response = self.gemini_model.generate_content(prompt)
+            corrected_text = response.text.strip()
+            
+            # Remove quotes if present
+            if corrected_text.startswith('"') and corrected_text.endswith('"'):
+                corrected_text = corrected_text[1:-1]
+            elif corrected_text.startswith("'") and corrected_text.endswith("'"):
+                corrected_text = corrected_text[1:-1]
+            
+            # Update the sentence
+            self.str = " " + corrected_text
+            
+            # Update conversation history
+            self.conversation_history.append({
+                "original": current_text,
+                "corrected": corrected_text
+            })
+            
+            # AI Assistant correction applied
+            
+            # Update the GUI display
+            self.panel5.config(text=self.str.strip())
+            
+        except Exception as e:
+            print(f"Error in AI Assistant: {e}")
+            import traceback
+            traceback.print_exc()
 
     def destructor(self):
 
