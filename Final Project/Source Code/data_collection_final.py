@@ -11,9 +11,9 @@ hd = HandDetector(maxHands=1)
 hd2 = HandDetector(maxHands=1)
 
 # Initialize count - create directory if it doesn't exist
-if not oss.path.exists("./AtoZ_3.1/A/"):
-    oss.makedirs("./AtoZ_3.1/A/")
-count = len(oss.listdir("./AtoZ_3.1/A/"))
+if not oss.path.exists("./AtoZ/A/"):
+    oss.makedirs("./AtoZ/A/")
+count = len(oss.listdir("./AtoZ/A/"))
 c_dir = 'A'
 
 offset = 15
@@ -99,7 +99,7 @@ while True:
             if ord(c_dir)==ord('Z')+1:
                 c_dir='A'
             flag = False
-            dir_path = "./AtoZ_3.1/" + c_dir + "/"
+            dir_path = "./AtoZ/" + c_dir + "/"
             if not oss.path.exists(dir_path):
                 oss.makedirs(dir_path)
             count = len(oss.listdir(dir_path))
@@ -117,7 +117,7 @@ while True:
                 flag=False
             if step%3==0 and skeleton1 is not None:
                 # Create directory if it doesn't exist
-                save_dir = "./AtoZ_3.1/" + c_dir + "/"
+                save_dir = "./AtoZ/" + c_dir + "/"
                 if not oss.path.exists(save_dir):
                     oss.makedirs(save_dir)
                 cv2.imwrite(save_dir + str(count) + ".jpg", skeleton1)

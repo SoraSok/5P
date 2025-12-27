@@ -25,7 +25,7 @@ ENV/
 # Data files (too large for git)
 data/
 # Image datasets (too many files for git)
-Final Project/Source Code/AtoZ_3.1/
+Final Project/Source Code/AtoZ/
 *.pkl
 *.h5
 *.hdf5

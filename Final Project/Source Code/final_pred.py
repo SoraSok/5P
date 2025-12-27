@@ -4,11 +4,9 @@ import math
 import cv2
 import os, sys
 import traceback
-import pyttsx3
 from keras.models import load_model
 from cvzone.HandTrackingModule import HandDetector
 from string import ascii_uppercase
-import enchant
 # Google Gemini Pro for LLM-powered context-aware suggestions
 try:
     import google.generativeai as genai
@@ -45,18 +43,8 @@ except ImportError as e:
     ELEVENLABS_AVAILABLE = False
     SOUNDFILE_AVAILABLE = False
     print(f"Warning: ElevenLabs not installed. Error: {e}")
-    print("Using pyttsx3 fallback.")
+    print("Text-to-speech will not be available.")
 
-#Change the language of your pc to english-united-state
-# Initialize enchant dictionary for spell checking
-try:
-    ddd = enchant.Dict("en_US")
-except:
-    try:
-        ddd = enchant.Dict("en-US")
-    except:
-        # Fallback if enchant dict not available
-        ddd = None
 hd = HandDetector(maxHands=1)
 hd2 = HandDetector(maxHands=1)
 import tkinter as tk
@@ -114,10 +102,10 @@ class Application:
                 print("Google Gemini Pro LLM enabled - using AI-powered context-aware suggestions")
             except Exception as e:
                 print(f"Warning: Could not configure Gemini Pro API: {e}")
-                print("Falling back to enchant spell checker")
+                print("Word suggestions will not be available.")
         else:
             print("Google Gemini Pro library not available. Install with: pip install google-generativeai")
-            print("Using enchant for basic spell checking (no AI features)")
+            print("Word suggestions will not be available.")
         
         # Initialize text-to-speech engines
         # ElevenLabs API key (hardcoded)
@@ -134,17 +122,11 @@ class Application:
                 print("ElevenLabs TTS enabled - using high-quality voice synthesis")
             except Exception as e:
                 print(f"Warning: Could not configure ElevenLabs API: {e}")
-                print("Falling back to pyttsx3")
+                print("Text-to-speech will not be available.")
         else:
             print("ElevenLabs library not available. Install with: pip install elevenlabs")
-            print("Using pyttsx3 for text-to-speech (offline, no API key required)")
-        
-        # Initialize pyttsx3 as fallback
-        self.speak_engine = pyttsx3.init()
-        self.speak_engine.setProperty("rate", 150)  # Slightly faster rate
-        voices = self.speak_engine.getProperty("voices")
-        if voices:
-            self.speak_engine.setProperty("voice", voices[0].id)
+            print("Text-to-speech will not be available.")
+
 
         self.ct = {}
         self.ct['blank'] = 0
@@ -948,31 +930,17 @@ class Application:
         self.count += 1
         self.ten_prev_char[self.count%10]=ch1
 
-
         if len(self.str.strip())!=0:
             st=self.str.rfind(" ")
             ed=len(self.str)
             word=self.str[st+1:ed]
             self.word=word
             
-            # Use enchant first (fast, immediate) then update with Gemini in background if available
-            if len(word.strip())!=0 and ddd is not None:
-                # Fallback to enchant spell checker
-                ddd.check(word)
-                lenn = len(ddd.suggest(word))
-                if lenn >= 4:
-                    self.word4 = ddd.suggest(word)[3]
-                if lenn >= 3:
-                    self.word3 = ddd.suggest(word)[2]
-                if lenn >= 2:
-                    self.word2 = ddd.suggest(word)[1]
-                if lenn >= 1:
-                    self.word1 = ddd.suggest(word)[0]
-            else:
-                self.word1 = " "
-                self.word2 = " "
-                self.word3 = " "
-                self.word4 = " "
+            # Initialize word suggestions to empty
+            self.word1 = " "
+            self.word2 = " "
+            self.word3 = " "
+            self.word4 = " "
             
             # Update with Gemini suggestions in background (non-blocking, async)
             # Use debouncing to avoid too many API calls
@@ -1089,41 +1057,15 @@ If you can't suggest 4 words, repeat the most likely ones."""
                 self.word3 = " "
                 self.word4 = " "
             else:
-                # Fallback to enchant if Gemini fails
-                if ddd is not None:
-                    ddd.check(word)
-                    lenn = len(ddd.suggest(word))
-                    if lenn >= 4:
-                        self.word4 = ddd.suggest(word)[3]
-                    if lenn >= 3:
-                        self.word3 = ddd.suggest(word)[2]
-                    if lenn >= 2:
-                        self.word2 = ddd.suggest(word)[1]
-                    if lenn >= 1:
-                        self.word1 = ddd.suggest(word)[0]
-                    else:
-                        self.word1 = self.word2 = self.word3 = self.word4 = " "
-                else:
-                    self.word1 = self.word2 = self.word3 = self.word4 = " "
+                # No suggestions available
+                self.word1 = self.word2 = self.word3 = self.word4 = " "
             
             # Reduced logging for performance
         except Exception:
-            pass  # Silent failure - enchant suggestions already shown
-            # Fallback to enchant
-            if ddd is not None:
-                ddd.check(word)
-                lenn = len(ddd.suggest(word))
-                if lenn >= 4:
-                    self.word4 = ddd.suggest(word)[3]
-                if lenn >= 3:
-                    self.word3 = ddd.suggest(word)[2]
-                if lenn >= 2:
-                    self.word2 = ddd.suggest(word)[1]
-                if lenn >= 1:
-                    self.word1 = ddd.suggest(word)[0]
-            else:
-                self.word1 = self.word2 = self.word3 = self.word4 = " "
+            pass  # Silent failure - no suggestions available
+            self.word1 = self.word2 = self.word3 = self.word4 = " "
     
+
     def _update_suggestion_buttons_from_suggestions(self, w1, w2, w3, w4):
         """Update suggestion buttons in GUI from async Gemini results (thread-safe)"""
         try:
