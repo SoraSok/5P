@@ -999,6 +999,39 @@ class Application:
         finally:
             self.gemini_request_pending = False
     
+    def _extract_text_from_gemini_response(self, response):
+        """Safely extract plain text from a Gemini response object"""
+        if response is None:
+            return ""
+        try:
+            if hasattr(response, "text") and response.text:
+                return response.text
+            # Try to walk candidates/parts for text content
+            candidates = getattr(response, "candidates", None)
+            if candidates:
+                for candidate in candidates:
+                    content = getattr(candidate, "content", None)
+                    if not content:
+                        continue
+                    parts = getattr(content, "parts", None)
+                    if parts:
+                        texts = [getattr(part, "text", "") for part in parts if getattr(part, "text", "")]
+                        if texts:
+                            return " ".join(texts).strip()
+            # Fallback to dict representation if available
+            if hasattr(response, "to_dict"):
+                resp_dict = response.to_dict()
+                # Navigate common structure
+                for candidate in resp_dict.get("candidates", []):
+                    content = candidate.get("content", {})
+                    for part in content.get("parts", []):
+                        text = part.get("text")
+                        if text:
+                            return text.strip()
+            return ""
+        except Exception:
+            return ""
+
     def _get_gemini_word_suggestions(self, word, sentence):
         """Internal method: Get context-aware word suggestions from Gemini Pro based on sentence context"""
         try:
@@ -1129,7 +1162,10 @@ Please:
 If the sentence is already correct, return it as-is."""
 
             response = self.gemini_model.generate_content(prompt)
-            corrected_text = response.text.strip()
+            corrected_text = self._extract_text_from_gemini_response(response).strip()
+            if not corrected_text:
+                print("Gemini AI Fix returned no text. Sentence left unchanged.")
+                return
             
             # Remove quotes if present
             if corrected_text.startswith('"') and corrected_text.endswith('"'):
