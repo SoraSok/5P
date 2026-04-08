@@ -84,7 +84,7 @@ class Application:
         self.model = load_model('./cnn8grps_rad1_model.h5')
         
         # Initialize Google Gemini Pro for LLM-powered features
-        self.gemini_api_key = "AIzaSyCxGKWhYYz87dfWozR2LWbSpNu6q1tAAwo"  # Hardcoded API key
+        self.gemini_api_key = "AIzaSyDSi4llUp_OWYaJGnKptnSWip6WQkgjSwY"  # Hardcoded API key
         self.gemini_model = None
         self.use_gemini = False
         self.conversation_history = []  # Store conversation for context
